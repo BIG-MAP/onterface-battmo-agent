@@ -29,8 +29,13 @@ Co-authored-by: YourCoAuthor <YourCoAuthor@users.noreply.github.com>"
 ```
 e.g.
 ```
-"fix data model, feed request params to BattMo
+"add results from hackathon
 
 Co-authored-by: jsimonclark <jsimonclark@users.noreply.github.com>
-Co-authored-by: eibar-flores <eibar-flores@users.noreply.github.com>"
+Co-authored-by: eibar-flores <eibar-flores@users.noreply.github.com>
+Co-authored-by: atinary-dpacheco <atinary-dpacheco@users.noreply.github.com>
+Co-authored-by: SimonStier <SimonStier@users.noreply.github.com>
+Co-authored-by: LukasGold <LukasGold@users.noreply.github.com>
+Co-authored-by: AndreasRaederISC <AndreasRaederISC@users.noreply.github.com>
+Co-authored-by: MatPopp <MatPopp@users.noreply.github.com>"
 ```
