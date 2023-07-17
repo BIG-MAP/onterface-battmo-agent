@@ -9,6 +9,7 @@ from battmo_prefect_flow import run_performance_spec, PerformanceSpecRequest, Pe
 from atinary_prefect_flow import run_geometry_optimization, ExecutedExperiment, BattmoOptimizationRequest, BattmoOptimizationResult
 from prefect import flow, task
 from prefect.blocks.system import Secret
+import random
 
 from pydantic import BaseModel
 from typing import List, Optional
@@ -186,7 +187,8 @@ def schedule_optimization_requests(request: OptimizationRequest):
         result = run_geometry_optimization(request=BattmoOptimizationRequest(
             #geometry = m.geometry,
             uuid = uuid,
-            #budget = 10
+            #budget = 10,
+            random_seed = random.randint(1,1e6)
         ))
         store_and_document_optimization_result(OptimizationResult(
             atinary_result = result,
