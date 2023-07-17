@@ -16,6 +16,13 @@ import uuid
 
 from zenodo_client import Creator, Metadata, ensure_zenodo
 
+import json
+import os
+import logging
+import requests
+from big_map_archive_api.create_and_share_records import prepare_output_file, upload_record, publish_record, save_to_file
+
+
 #os.environ["PATH"] = "/home/jovyan/.local/bin" #PATH=$PATH:~/.local/bin/
 os.environ["PATH"] += os.pathsep + "/home/jovyan/.local/bin" # ensure datamodel-codegen is found
 #os.environ["PREFECT_API_URL"] = "http://127.0.0.1:4200/api"
@@ -66,7 +73,7 @@ class OptimizationResult(model.OswBaseModel):
 
 @task
 def store_and_document_result(result: Result):
-    #print(result.battmo_result)
+    print(result)
     title = "Item:" + osw.get_osw_id(result.battmo_model.uuid)
     model_entity = osw.load_entity(title).cast(model.BattmoModel)
     model_entity.performance = { "uuid": uuid.uuid4(), "energyDensity": result.battmo_result.result.energyDensity}
@@ -88,7 +95,9 @@ def store_and_document_result(result: Result):
     
 @task
 def store_and_document_optimization_result(result: OptimizationResult):
-    #print(result.battmo_result)
+    file_name = 'optimization.json'
+    with open(file_name, "w", encoding="utf-8") as f:
+        f.write(result.json(exclude_none=True))
     title = "Item:" + osw.get_osw_id(result.battmo_model.uuid)
     model_entity = osw.load_entity(title).cast(model.BattmoModel)
     model_entity.geometry = result.atinary_result.best_run.geometry
@@ -185,20 +194,101 @@ def schedule_optimization_requests(request: OptimizationRequest):
         ))
         #store_and_document_results.submit(wait_for=flowA)
         
-class PublishRequest(model.OswBaseModel):
-    model_titles: List[str]
-    osw_instance: Optional[str] = "onterface.open-semantic-lab.org"
+@task()
+def create_bigmaparchive_record(model_entity: model.BattmoModel):
+    #url = "https://archive.big-map.eu/"
+    url = "https://big-map-archive-demo.materialscloud.org/"
+
+    # Navigate to 'Applications' > 'Personal access tokens' to create a token if necessary
+    token = Secret.load("big-map-archive-demo-api-key").get();
+
+    records_path = 'records'
+    links_filename = 'records_links.json'
     
-@flow() # validation will fail due to model.entity class
-def publish_results(request: PublishRequest):
-    os.environ["ZENODO_SANDBOX_API_TOKEN"] = Secret.load("zenodo-sandbox-api-token").get();
-    connect(ConnectionSettings(domain=request.osw_instance))
-    fetch_schema()
-    for title in request.model_titles:
-        model_entity = osw.load_entity(title)
-        #model_entity.uuid
-        model_entity = model_entity.cast(model.BattmoModel)
+    file_name = os.path.join(records_path, '0', str(model_entity.uuid) + '.json')
+    with open(file_name, "w", encoding="utf-8") as f:
+        f.write(model_entity.json(exclude_none=True))
+    
+    # Define the metadata that will be used on initial upload
+    label = "BattMo Model" 
+    if (model_entity.label and model_entity.label[0] and model_entity.label[0].text):
+        label = model_entity.label[0].text
+    description = "Demo data" 
+    if (model_entity.description and model_entity.description[0] and model_entity.description[0].text): 
+        description = model_entity.description[0].text
+    
+    data = {
+      "access": {
+        "record": "public",
+        "files": "public"
+      },
+      "files": {
+        "enabled": True
+      },
+      "metadata": {
+        "creators": [
+          {
+            "person_or_org": {
+              "family_name": " Bot",
+              "given_name": "Onterface",
+              "type": "personal"
+            }
+          }
+        ],
+        "publication_date": "2022-11-28",
+        "resource_type": { "id": "dataset" },
+        "title": label,
+        "version": "v1"
+      }
+    }
+    with open(os.path.join(records_path, '0', 'record_metadata.json'), "w", encoding="utf-8") as f:
+        f.write(json.dumps(data))
+
+    # Specify records that you want to upload:
+    # ('<record metadata json>.json', ['<datafile1>', '<datafile2>'])
+    records = [
+        ('record_metadata.json', [str(model_entity.uuid) + '.json'])
+    ]
+
+    publish = True
+
+    logger = logging.getLogger()
+    logger.addHandler(logging.StreamHandler())
+    logger.setLevel(logging.INFO)
+
+    try:
+        prepare_output_file(records_path, links_filename)
+
+        record_index = 0
+        for record in records:
+            logger.info('----------Start uploading record ' + str(record_index) + '----------')
+            record_links = upload_record(url, records_path, record, record_index, token)
+
+            if publish:
+                # Publish the draft record
+                publish_record(record_links, token)
+
+            # Save the record's links to a file
+            save_to_file(records_path, links_filename, record_links)
+
+            record_index += 1
+        logger.info('Uploading was successful. See the file records_links.json for links to the created records.')
+    except Exception as e:
+        logger.error('Error occurred: ' + str(e))
+    
+    print(record_links)
+    if not model_entity.repository_records: model_entity.repository_records = []
+    model_entity.repository_records.append(model.Repository(
+        repository_name="BIG-MAP Archive",
+        record_pid=record_links['record_html'].split('/')[-1],
+        record_link=record_links['record_html']
+    ))
+    return model_entity
         
+@task()
+def create_zenodo_record(model_entity: model.BattmoModel):
+    os.environ["ZENODO_SANDBOX_API_TOKEN"] = Secret.load("zenodo-sandbox-api-token").get();
+    
     # Define the metadata that will be used on initial upload
     label = "BattMo Model" 
     if (model_entity.label and model_entity.label[0] and model_entity.label[0].text):
@@ -235,6 +325,44 @@ def publish_results(request: PublishRequest):
     res = res.json()
     pprint(res)
     model_entity.doi = res['doi']
+    return model_entity
+        
+class PublishRequest(model.OswBaseModel):
+    model_titles: List[str]
+    osw_instance: Optional[str] = "onterface.open-semantic-lab.org",
+    repository: Optional[str] = "sandbox.zenodo.org"
+    
+@flow() # validation will fail due to model.entity class
+def publish_results(request: PublishRequest):
+    
+    connect(ConnectionSettings(domain=request.osw_instance))
+    fetch_schema()
+    for title in request.model_titles:
+        model_entity = osw.load_entity(title)
+        #model_entity.uuid
+        model_entity = model_entity.cast(model.BattmoModel)
+       
+    if request.repository == "sandbox.zenodo.org": model_entity = create_zenodo_record(model_entity)
+
+    osw.store_entity(model_entity)
+    
+class BigMapPublishRequest(model.OswBaseModel):
+    model_titles: List[str]
+    osw_instance: Optional[str] = "onterface.open-semantic-lab.org",
+    repository: Optional[str] = "big-map-archive-demo.materialscloud.org"
+    
+@flow()
+def publish_results_bigmap(request: BigMapPublishRequest):
+    
+    connect(ConnectionSettings(domain=request.osw_instance))
+    fetch_schema()
+    for title in request.model_titles:
+        model_entity = osw.load_entity(title)
+        #model_entity.uuid
+        model_entity = model_entity.cast(model.BattmoModel)
+       
+    if request.repository == "big-map-archive-demo.materialscloud.org": model_entity = create_bigmaparchive_record(model_entity)
+
     osw.store_entity(model_entity)
     
 if __name__ == "__main__":
@@ -242,8 +370,11 @@ if __name__ == "__main__":
     #    model_titles = ["Item:OSWfaa2ed87af914357ad6ff5110ef1632f"]
     #))
     #schedule_optimization_requests(OptimizationRequest(
-    #    model_titles = ["Item:OSWfaa2ed87af914357ad6ff5110ef1632f"]
+    #    model_titles = ["Item:OSW57814a41a59c4411a6bd5f4f13009972"]
     #))
     publish_results(OptimizationRequest(
-        model_titles = ["Item:OSW4539df4e82524c53b4a86ea66a702364"]
+        model_titles = ["Item:OSWa600b56fa5c1453aa62e0b867ee9d42f"]
     ))
+    #publish_results_bigmap(BigMapPublishRequest(
+    #    model_titles=["Item:OSW58b04b26f6484a8cbddd5c6b70cad5bc"]
+    #))
