@@ -28,7 +28,7 @@ from create_and_share_records import prepare_output_file, upload_record, publish
 
 
 #os.environ["PATH"] = "/home/jovyan/.local/bin" #PATH=$PATH:~/.local/bin/
-os.environ["PATH"] += os.pathsep + "/home/jovyan/.local/bin" # ensure datamodel-codegen is found
+os.environ["PATH"] += os.pathsep + "/usr/local/bin/" # ensure datamodel-codegen is found
 #os.environ["PREFECT_API_URL"] = "http://127.0.0.1:4200/api"
 
 
@@ -138,10 +138,11 @@ def create_bigmaparchive_record(model_entity: model.Entity):
     url = "https://big-map-archive-demo.materialscloud.org/"
 
     # Navigate to 'Applications' > 'Personal access tokens' to create a token if necessary
-    token = Secret.load("big-map-archive-demo-api-key").get();
+    token = Secret.load("big-map-archive-demo-api-key").get()
 
-    records_path = 'records'
-    links_filename = 'records_links.json'
+    records_path = '/root/flows/records'
+    
+    links_filename = '/root/flows/records_links.json'
     
     file_name = os.path.join(records_path, '0', str(model_entity.uuid) + '.json')
     with open(file_name, "w", encoding="utf-8") as f:
@@ -305,7 +306,7 @@ def publish_results_bigmap(request: BigMapPublishRequest):
     osw.store_entity(model_entity)
     
 if __name__ == "__main__":
-    #schedule_pending_requests(SimulationRequest(
+    #schedule_simulation_requests(SimulationRequest(
     #    model_titles = ["Item:OSWfaa2ed87af914357ad6ff5110ef1632f"]
     #))
     #schedule_optimization_requests(OptimizationRequest(
