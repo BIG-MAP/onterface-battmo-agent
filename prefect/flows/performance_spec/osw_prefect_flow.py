@@ -52,7 +52,7 @@ def fetch_schema():
     # Requires 'pip install datamodel-code-generator'
     list_of_categories = [
         #"Category:OSWb79812225c7849b78e98f2b3b10498b3", # WorkflowRun
-        #"Category:OSW553f78cc66194ae1873241207b906c4b", # BattMoModel
+        "Category:OSW553f78cc66194ae1873241207b906c4b", # BattMoModel
     ]
     for i, cat in enumerate(list_of_categories):
         mode = "append"
@@ -132,7 +132,8 @@ def schedule_simulation_requests(request: SimulationRequest):
         #store_and_document_results.submit(wait_for=flowA)
         
 @task()
-def create_bigmaparchive_record(model_entity: model.BattmoModel):
+def create_bigmaparchive_record(model_entity: model.Entity):
+    model_entity = model_entity.cast(model.BattmoModel)
     #url = "https://archive.big-map.eu/"
     url = "https://big-map-archive-demo.materialscloud.org/"
 
@@ -223,8 +224,9 @@ def create_bigmaparchive_record(model_entity: model.BattmoModel):
     return model_entity
         
 @task()
-def create_zenodo_record(model_entity: model.BattmoModel):
-    os.environ["ZENODO_SANDBOX_API_TOKEN"] = Secret.load("zenodo-sandbox-api-token").get();
+def create_zenodo_record(model_entity: model.Entity):
+    model_entity = model_entity.cast(model.BattmoModel)
+    os.environ["ZENODO_SANDBOX_API_TOKEN"] = Secret.load("zenodo-sandbox-api-token").get()
     
     # Define the metadata that will be used on initial upload
     label = "BattMo Model" 
