@@ -1,4 +1,5 @@
 import os
+from os import environ
 from importlib import reload
 
 import osw.model.entity as model
@@ -39,9 +40,18 @@ class ConnectionSettings(model.OswBaseModel):
 @task
 def connect(settings: ConnectionSettings):
     global wtsite
-    # fetch secret from calculated name
-    password = Secret.load(settings.osw_user_name.lower() + '-' + settings.osw_domain.replace('.','-'))
-    wtsite = WtSite.from_domain(settings.osw_domain, None, {"username": settings.osw_user_name, "password": password.get()})
+    # define username
+    if environ.get('OSW_USER') is not None and environ.get('OSW_USER') != "":
+        settings.osw_user_name = environ.get('OSW_USER')
+    if environ.get('OSW_SERVER') is not None and environ.get('OSW_SERVER') != "":
+        settings.osw_domain = environ.get('OSW_SERVER')
+    password = ""
+    if environ.get('OSW_PASSWORD') is not None and environ.get('OSW_PASSWORD') != "":
+        password = environ.get('OSW_PASSWORD')
+    else: 
+        # fetch secret from calculated name
+        password = Secret.load(settings.osw_user_name.lower() + '-' + settings.osw_domain.replace('.','-')).get() # e. g. onterfacebot-onterface-open-semantic-lab-org
+    wtsite = WtSite.from_domain(settings.osw_domain, None, {"username": settings.osw_user_name, "password": password})
     global osw
     osw = OSW(site=wtsite)
 
