@@ -6,13 +6,13 @@ from osw.core import OSW
 from osw.wtsite import WtSite
 
 from battmo_prefect_flow import run_performance_spec, PerformanceSpecRequest, PerformanceSpecResponse
-from atinary_prefect_flow import run_geometry_optimization, ExecutedExperiment, BattmoOptimizationRequest, BattmoOptimizationResult
+
 from prefect import flow, task
 from prefect.blocks.system import Secret
 import random
 
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 import uuid
 
 from zenodo_client import Creator, Metadata, ensure_zenodo
@@ -21,7 +21,10 @@ import json
 import os
 import logging
 import requests
-from big_map_archive_api.create_and_share_records import prepare_output_file, upload_record, publish_record, save_to_file
+import sys
+# caution: path[0] is reserved for script path (or '' in REPL)
+sys.path.insert(1, '/root/flows/big-map-archive-api-client')
+from create_and_share_records import prepare_output_file, upload_record, publish_record, save_to_file
 
 
 #os.environ["PATH"] = "/home/jovyan/.local/bin" #PATH=$PATH:~/.local/bin/
@@ -66,11 +69,7 @@ def query_pending_requests():
 
 class Result(model.OswBaseModel):
     battmo_result: PerformanceSpecResponse
-    battmo_model: model.BattmoModel
-    
-class OptimizationResult(model.OswBaseModel):
-    atinary_result: BattmoOptimizationResult
-    battmo_model: model.BattmoModel
+    battmo_model: Any #model.BattmoModel
 
 @task
 def store_and_document_result(result: Result):
@@ -93,31 +92,7 @@ def store_and_document_result(result: Result):
             break
     osw.store_entity(model_entity)
     print("FINISHED")
-    
-@task
-def store_and_document_optimization_result(result: OptimizationResult):
-    file_name = 'optimization.json'
-    with open(file_name, "w", encoding="utf-8") as f:
-        f.write(result.json(exclude_none=True))
-    title = "Item:" + osw.get_osw_id(result.battmo_model.uuid)
-    model_entity = osw.load_entity(title).cast(model.BattmoModel)
-    model_entity.geometry = result.atinary_result.best_run.geometry
-    model_entity.performance = { "uuid": uuid.uuid4(), "energyDensity": result.atinary_result.best_run.spec_response.result.energyDensity}
-    #if (not model_entity.statements): model_entity.statements = []
-    #model_entity.statements.append(model.Statement(
-    #  quantity = "Property:EnergyDensity",
-    #  numerical_value = str(result.battmo_result.result.energyDensity),
-    #  unit = "Property:EnergyDensity#OSW5b8270a6329d4831b414a5ef5d4ca946",
-    #  unit_symbol = "J/m³",
-    #  value = str(result.battmo_result.result.energyDensity) + " J/m³"
-    #));
-    for run in model_entity.workflow_runs:
-        if (run.uuid == result.atinary_result.best_run.spec_response.uuid):
-            run.status = "Item:OSWf474ec34b7df451ea8356134241aef8a"
-            print(run.uuid)
-            break
-    osw.store_entity(model_entity)
-    print("FINISHED")
+
     
 class SimulationRequest(model.OswBaseModel):
     model_titles: List[str]
@@ -152,46 +127,6 @@ def schedule_simulation_requests(request: SimulationRequest):
         ))
         store_and_document_result(Result(
             battmo_result = result,
-            battmo_model = m
-        ))
-        #store_and_document_results.submit(wait_for=flowA)
-        
-class OptimizationRequest(model.OswBaseModel):
-    model_titles: List[str]
-    osw_instance: Optional[str] = "onterface.open-semantic-lab.org"
-    
-@flow(validate_parameters=True) # validation will fail due to model.entity class
-def schedule_optimization_requests(request: OptimizationRequest):
-    connect(ConnectionSettings(domain=request.osw_instance))
-    fetch_schema()
-    if not request.model_titles:
-        request.model_titles = query_pending_requests()
-    m = None
-    uuid = None
-    for title in request.model_titles:
-        model_entity = osw.load_entity(title)
-        #model_entity.uuid
-        model_entity = model_entity.cast(model.BattmoModel)
-        for run in model_entity.workflow_runs:
-            if (run.status == "Item:OSWaa8d29404288446a9f3ec7afa4e2a512" # ToDo
-                and run.tool
-                and "Item:OSWb80747f1ccf340d790955572d27f678c" in run.tool # BattmoAtinaryOptimization
-               ):
-                m = model_entity
-                uuid = run.uuid
-                print(run.uuid)
-                break
-    if (m):
-        print(m.geometry)
-        
-        result = run_geometry_optimization(request=BattmoOptimizationRequest(
-            #geometry = m.geometry,
-            uuid = uuid,
-            #budget = 10,
-            random_seed = random.randint(1,1e6)
-        ))
-        store_and_document_optimization_result(OptimizationResult(
-            atinary_result = result,
             battmo_model = m
         ))
         #store_and_document_results.submit(wait_for=flowA)
