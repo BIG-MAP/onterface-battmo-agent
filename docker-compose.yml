@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  agent:
+    image: onterface-battmo-agent
+    build:
+      context: ./build
+    restart: unless-stopped
+    #entrypoint: "prefect agent start -p 'default-agent-pool'"
+    entrypoint: >-
+      /bin/bash -c '
+      prefect deployment build -a -n performance_spec -p default-agent-pool /root/flows/performance_spec/battmo_prefect_flow.py:run_performance_spec;
+      prefect deployment build -a -n schedule_simulation_requests -p default-agent-pool /root/flows/performance_spec/osw_prefect_flow.py:schedule_simulation_requests;
+      prefect deployment build -a -n publish_results_bigmap -p default-agent-pool /root/flows/performance_spec/osw_prefect_flow.py:publish_results_bigmap;
+      prefect agent start -p default-agent-pool
+      '
+    working_dir: "/root/flows"
+    volumes:
+      - "./prefect/flows:/root/flows"
+    environment:
+      - PREFECT_API_URL=${PREFECT_SERVER}/api
+#       Use PREFECT_API_KEY to use the CLI to interact with Prefect Cloud
+#     - PREFECT_API_KEY=YOUR_API_KEY
+      - OSW_SERVER=${OSW_SERVER}
+      - OSW_USER=${OSW_USER}
+      - OSW_PASSWORD=${OSW_PASSWORD}
