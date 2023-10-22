@@ -1,0 +1,6 @@
+[submodule "prefect/flows/BattMo"]
+	path = prefect/flows/BattMo
+	url = https://github.com/BattMoTeam/BattMo
+[submodule "prefect/flows/big-map-archive-api-client"]
+	path = prefect/flows/big-map-archive-api-client
+	url = https://github.com/materialscloud-org/big-map-archive-api-client
